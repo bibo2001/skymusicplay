@@ -3,28 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky 自動演奏機 (V8 白霓虹版)</title>
+    <title>Sky 自動演奏機 (V9 延音修正版)</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     
     <style>
         :root {
             --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
-            
-            /* 按鍵背景 */
             --key-bg: rgba(0, 0, 0, 0.6); 
             
-            /* --- 霓虹配色調整區 --- */
-            /* 線條改為接近純白 */
+            /* 霓虹配色：白粉系 */
             --line-color-base: #ffffff; 
-            /* 靜止時的光暈：很淡的白粉色 */
             --neon-shadow: 0 0 3px rgba(255, 255, 255, 0.8), 0 0 6px rgba(255, 200, 210, 0.3);
             
-            /* 按下時的配色：亮白核心 + 較明顯的粉光 */
+            /* 按下時：亮白核心 + 強烈粉光 */
             --active-border: #ffffff;
-            --active-shadow: 0 0 10px #ffffff, 0 0 20px #ffb7c5; 
+            --active-shadow: 0 0 10px #ffffff, 0 0 25px #ffb7c5, 0 0 40px #ff69b4; 
             
-            /* UI 顏色 */
             --control-bg: rgba(0, 0, 0, 0.4);
             --control-border: rgba(255, 255, 255, 0.15);
             --button-bg: rgba(255, 255, 255, 0.1);
@@ -81,7 +76,7 @@
             transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s;
         }
         .controls.hidden {
-            transform: translateY(-150%); /* 收起 */
+            transform: translateY(-150%);
             opacity: 0;
             pointer-events: none;
         }
@@ -125,7 +120,7 @@
 
         .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.15); margin: 0 5px; }
 
-        /* 隱藏/顯示按鈕 */
+        /* Toggle Button */
         #toggleControlsBtn {
             position: fixed;
             bottom: 20px;
@@ -147,16 +142,11 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
         #toggleControlsBtn:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.1); }
-        
-        /* 當面板隱藏時，讓眼睛按鈕稍微變淡，代表「現在是隱藏狀態」 */
-        #toggleControlsBtn.dimmed {
-            opacity: 0.6; 
-        }
+        #toggleControlsBtn.dimmed { opacity: 0.6; }
         #toggleControlsBtn.dimmed:hover { opacity: 1; }
 
         /* --- Keyboard Grid --- */
         .instrument-wrapper { transform: scale(1.1); }
-
         .keys-grid {
             display: grid;
             grid-template-columns: repeat(5, 90px);
@@ -171,23 +161,20 @@
             border-radius: 20px;
             display: flex; align-items: center; justify-content: center;
             position: relative;
-            transition: transform 0.1s, background 0.1s;
+            transition: transform 0.1s, background 0.1s; /* 這裡不放 box-shadow 的 transition 以確保反應即時 */
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
 
-        /* 線條：改為細緻的白色 */
         .shape-diamond, .shape-circle, .shape-compound {
             position: absolute;
             border: 2px solid var(--line-color-base); 
-            box-shadow: var(--neon-shadow); /* 淡淡的白粉光暈 */
-            transition: all 0.05s;
+            box-shadow: var(--neon-shadow);
+            transition: all 0.1s; /* 讓線條變化稍微平滑 */
             pointer-events: none;
         }
-
         .shape-diamond { width: 42px; height: 42px; transform: rotate(45deg); border-radius: 3px; }
         .shape-circle { width: 52px; height: 52px; border-radius: 50%; }
-        
         .shape-compound {
             width: 52px; height: 52px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
@@ -199,20 +186,20 @@
             box-shadow: var(--neon-shadow);
         }
 
-        /* --- Active Effects (按下瞬間) --- */
+        /* --- Active Effects (Sustain) --- */
+        /* 移除 active 的 transition delay，讓它即時反應 */
         .key.active {
             transform: scale(0.94);
             background: rgba(255, 255, 255, 0.15); 
         }
         
-        /* 按下時線條變超亮 */
         .key.active .shape-diamond, 
         .key.active .shape-circle, 
         .key.active .shape-compound,
         .key.active .shape-compound::after {
             border-color: var(--active-border);
             box-shadow: var(--active-shadow);
-            border-width: 3px; /* 稍微變粗 */
+            border-width: 3px; 
         }
 
         .ripple {
@@ -223,7 +210,6 @@
             border-radius: 20px; opacity: 0; pointer-events: none;
         }
         .key.active .ripple { animation: rippleEffect 0.35s ease-out; }
-
         @keyframes rippleEffect {
             0% { transform: translate(-50%, -50%) scale(1); opacity: 1; border-width: 3px; }
             100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; border-width: 0px; }
@@ -284,14 +270,13 @@
         const controlsPanel = document.getElementById('controlsPanel');
         const toggleBtn = document.getElementById('toggleControlsBtn');
 
-        // Helper: 截斷檔名
         function truncateName(name, maxLength = 12) {
             if (name.length <= maxLength) return name;
             const extIndex = name.lastIndexOf('.');
             if (extIndex !== -1) {
                 const ext = name.substring(extIndex);
                 const base = name.substring(0, extIndex);
-                if (base.length > maxLength - ext.length) {
+                if (base.length > maxLength - ext.length - 2) {
                     return base.substring(0, maxLength - ext.length - 2) + '..' + ext;
                 }
             }
@@ -305,11 +290,8 @@
                 key.className = 'key';
                 key.id = `sky-key-${index}`;
                 
-                // 形狀
                 const shape = document.createElement('div');
                 shape.className = `shape-${shapeType}`;
-                
-                // 波紋
                 const ripple = document.createElement('div');
                 ripple.className = 'ripple';
                 
@@ -317,24 +299,18 @@
                 key.appendChild(ripple);
                 keyboard.appendChild(key);
 
-                key.addEventListener('mousedown', () => playOneNote(SKY_NOTES[index], index));
+                // 手動點擊時，給一個固定的短時長
+                key.addEventListener('mousedown', () => {
+                    if (!synth) initAudio();
+                    const now = Tone.now();
+                    // 假設手動點擊長度為 0.3秒
+                    synth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 0.3, now);
+                    
+                    // 視覺
+                    key.classList.add('active');
+                    setTimeout(() => key.classList.remove('active'), 300);
+                });
             });
-        }
-
-        function playOneNote(midiNote, index) {
-            if (!synth) initAudio();
-            const now = Tone.now();
-            const freq = Tone.Frequency(midiNote, "midi");
-            synth.triggerAttackRelease(freq, "8n", now);
-            highlightKey(index);
-        }
-
-        function highlightKey(index) {
-            const el = document.getElementById(`sky-key-${index}`);
-            if (el) {
-                el.classList.remove('active'); void el.offsetWidth; el.classList.add('active');
-                setTimeout(() => el.classList.remove('active'), 250);
-            }
         }
 
         async function handleMidiFile(files) {
@@ -392,11 +368,23 @@
             if (!synth) { await initAudio(); return; }
             const type = document.getElementById('instrumentSelect').value;
             synth.releaseAll();
+            // 更新 Envelope: 增加 Sustain Level, 縮短 Release
+            // 這樣按住時有聲音，放開時馬上消失
+            const commonEnvelope = { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.1 };
+
             switch(type) {
-                case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); synth.volume.value = -5; break;
-                case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); synth.volume.value = -8; break;
-                case 'synth': synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); synth.volume.value = -10; break;
-                case 'harp': default: synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.8 } }); synth.volume.value = -5; break;
+                case 'piano':
+                    synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope });
+                    synth.volume.value = -5; break;
+                case 'guitar':
+                    synth.set({ oscillator: { type: "sawtooth" }, envelope: commonEnvelope });
+                    synth.volume.value = -8; break;
+                case 'synth':
+                    synth.set({ oscillator: { type: "square" }, envelope: commonEnvelope });
+                    synth.volume.value = -10; break;
+                case 'harp': default:
+                    synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope });
+                    synth.volume.value = -5; break;
             }
         }
 
@@ -437,11 +425,35 @@
                     while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
                     const keyIndex = SKY_NOTES.indexOf(playMidi);
                     if (keyIndex !== -1) {
+                        
+                        // 音訊與視覺分離排程
                         Tone.Transport.schedule((time) => {
+                            // 1. Audio On
                             const freq = Tone.Frequency(playMidi, "midi");
+                            // 使用 triggerAttackRelease 自動處理按住的時間
                             synth.triggerAttackRelease(freq, note.duration, time);
-                            Tone.Draw.schedule(() => highlightKey(keyIndex), time);
+
+                            // 2. Visual On
+                            Tone.Draw.schedule(() => {
+                                const el = document.getElementById(`sky-key-${keyIndex}`);
+                                if (el) {
+                                    // 確保重置動畫
+                                    el.classList.remove('active');
+                                    void el.offsetWidth; 
+                                    el.classList.add('active');
+                                }
+                            }, time);
+
+                            // 3. Visual Off
+                            // 計算何時移除 class，最少顯示 0.1 秒避免太快看不見
+                            const visualDuration = Math.max(note.duration, 0.1);
+                            Tone.Draw.schedule(() => {
+                                const el = document.getElementById(`sky-key-${keyIndex}`);
+                                if (el) el.classList.remove('active');
+                            }, time + visualDuration);
+
                         }, note.time);
+                        
                         if(note.time + note.duration > endTime) endTime = note.time + note.duration;
                     }
                 });
@@ -449,17 +461,14 @@
             Tone.Transport.schedule(() => stopPlay(), endTime + 1);
         }
 
-        // 隱藏/顯示控制面板
         let controlsVisible = true;
         function toggleControls() {
             controlsVisible = !controlsVisible;
             if (controlsVisible) {
                 controlsPanel.classList.remove('hidden');
-                // 顯示時按鈕完全不透明
                 toggleBtn.classList.remove('dimmed');
             } else {
                 controlsPanel.classList.add('hidden');
-                // 隱藏時按鈕稍微變淡，但圖示依然是眼睛
                 toggleBtn.classList.add('dimmed');
             }
         }
