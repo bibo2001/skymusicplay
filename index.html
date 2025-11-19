@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sky 自動演奏機 (V8 白霓虹版)</title>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        :root {
+            --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
+            
+            /* 按鍵背景 */
+            --key-bg: rgba(0, 0, 0, 0.6); 
+            
+            /* --- 霓虹配色調整區 --- */
+            /* 線條改為接近純白 */
+            --line-color-base: #ffffff; 
+            /* 靜止時的光暈：很淡的白粉色 */
+            --neon-shadow: 0 0 3px rgba(255, 255, 255, 0.8), 0 0 6px rgba(255, 200, 210, 0.3);
+            
+            /* 按下時的配色：亮白核心 + 較明顯的粉光 */
+            --active-border: #ffffff;
+            --active-shadow: 0 0 10px #ffffff, 0 0 20px #ffb7c5; 
+            
+            /* UI 顏色 */
+            --control-bg: rgba(0, 0, 0, 0.4);
+            --control-border: rgba(255, 255, 255, 0.15);
+            --button-bg: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-gradient);
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            overflow: hidden;
+            transition: background-image 0.5s ease;
+        }
+
+        .bg-stars {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 150px 160px, #ddd, rgba(0,0,0,0));
+            background-repeat: repeat;
+            background-size: 200px 200px;
+            opacity: 0.3;
+            z-index: -1;
+        }
+        body.custom-bg .bg-stars { display: none; }
+
+        /* --- Controls --- */
+        .controls {
+            position: absolute;
+            top: 20px;
+            background: var(--control-bg);
+            backdrop-filter: blur(10px);
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid var(--control-border);
+            z-index: 100;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 95%;
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s;
+        }
+        .controls.hidden {
+            transform: translateY(-150%); /* 收起 */
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .btn {
+            background: var(--button-bg);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+            white-space: nowrap;
+            min-width: 80px;
+            text-align: center;
+        }
+        .btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.5); }
+        .btn-play { 
+            background: rgba(255, 255, 255, 0.9); 
+            color: #333; 
+            border: none; 
+            font-weight: bold; 
+            box-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+        .btn-play:hover { background: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.6); }
+
+        select {
+            background: var(--button-bg);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            outline: none;
+            transition: 0.2s;
+        }
+        select:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
+        option { background: #333; }
+
+        .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.15); margin: 0 5px; }
+
+        /* 隱藏/顯示按鈕 */
+        #toggleControlsBtn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 45px;
+            height: 45px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 22px;
+            color: white;
+            z-index: 101;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        #toggleControlsBtn:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.1); }
+        
+        /* 當面板隱藏時，讓眼睛按鈕稍微變淡，代表「現在是隱藏狀態」 */
+        #toggleControlsBtn.dimmed {
+            opacity: 0.6; 
+        }
+        #toggleControlsBtn.dimmed:hover { opacity: 1; }
+
+        /* --- Keyboard Grid --- */
+        .instrument-wrapper { transform: scale(1.1); }
+
+        .keys-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 90px);
+            grid-template-rows: repeat(3, 90px);
+            gap: 15px;
+        }
+
+        /* --- Key Styles --- */
+        .key {
+            width: 90px; height: 90px;
+            background: var(--key-bg);
+            border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+            transition: transform 0.1s, background 0.1s;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        /* 線條：改為細緻的白色 */
+        .shape-diamond, .shape-circle, .shape-compound {
+            position: absolute;
+            border: 2px solid var(--line-color-base); 
+            box-shadow: var(--neon-shadow); /* 淡淡的白粉光暈 */
+            transition: all 0.05s;
+            pointer-events: none;
+        }
+
+        .shape-diamond { width: 42px; height: 42px; transform: rotate(45deg); border-radius: 3px; }
+        .shape-circle { width: 52px; height: 52px; border-radius: 50%; }
+        
+        .shape-compound {
+            width: 52px; height: 52px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .shape-compound::after {
+            content: ''; width: 30px; height: 30px;
+            border: 2px solid var(--line-color-base);
+            transform: rotate(45deg); border-radius: 2px;
+            box-shadow: var(--neon-shadow);
+        }
+
+        /* --- Active Effects (按下瞬間) --- */
+        .key.active {
+            transform: scale(0.94);
+            background: rgba(255, 255, 255, 0.15); 
+        }
+        
+        /* 按下時線條變超亮 */
+        .key.active .shape-diamond, 
+        .key.active .shape-circle, 
+        .key.active .shape-compound,
+        .key.active .shape-compound::after {
+            border-color: var(--active-border);
+            box-shadow: var(--active-shadow);
+            border-width: 3px; /* 稍微變粗 */
+        }
+
+        .ripple {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%; height: 100%;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            border-radius: 20px; opacity: 0; pointer-events: none;
+        }
+        .key.active .ripple { animation: rippleEffect 0.35s ease-out; }
+
+        @keyframes rippleEffect {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; border-width: 3px; }
+            100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; border-width: 0px; }
+        }
+
+        #statusMsg { color: #ccc; font-size: 14px; white-space: nowrap; margin-left: 5px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-stars"></div>
+
+    <div class="controls" id="controlsPanel">
+        <input type="file" id="midiFileInput" accept=".mid,.midi" onchange="handleMidiFile(this.files)" style="display:none">
+        <button class="btn" id="midiBtn" onclick="document.getElementById('midiFileInput').click()">📂 上傳 MIDI</button>
+        
+        <input type="file" id="bgFileInput" accept="image/*" onchange="handleBgFile(this.files)" style="display:none">
+        <button class="btn" id="bgBtn" onclick="document.getElementById('bgFileInput').click()">🖼️ 上傳背景</button>
+
+        <select id="instrumentSelect" onchange="changeInstrument()">
+            <option value="harp">豎琴</option>
+            <option value="piano">鋼琴</option>
+            <option value="guitar">吉他</option>
+            <option value="synth">Synth</option>
+        </select>
+
+        <div class="separator"></div>
+
+        <button class="btn btn-play" id="playBtn" onclick="togglePlay()">▶ 播放</button>
+        <button class="btn" onclick="stopPlay()">■ 停止</button>
+        <span id="statusMsg">請選擇檔案...</span>
+    </div>
+
+    <div class="instrument-wrapper">
+        <div class="keys-grid" id="keyboard"></div>
+    </div>
+
+    <div id="toggleControlsBtn" onclick="toggleControls()">👁️</div>
+
+    <script>
+        const SHAPE_LAYOUT = [
+            'compound', 'diamond', 'circle', 'diamond', 'circle',    // Row 1
+            'circle', 'diamond', 'compound', 'diamond', 'circle',    // Row 2
+            'circle', 'diamond', 'circle', 'diamond', 'compound'     // Row 3
+        ];
+
+        const SKY_NOTES = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84];
+
+        let currentMidi = null;
+        let synth = null;
+        let shiftAmount = 0;
+        let isPlaying = false;
+        const keyboard = document.getElementById('keyboard');
+        const statusMsg = document.getElementById('statusMsg');
+        const playBtn = document.getElementById('playBtn');
+        const body = document.body;
+        const controlsPanel = document.getElementById('controlsPanel');
+        const toggleBtn = document.getElementById('toggleControlsBtn');
+
+        // Helper: 截斷檔名
+        function truncateName(name, maxLength = 12) {
+            if (name.length <= maxLength) return name;
+            const extIndex = name.lastIndexOf('.');
+            if (extIndex !== -1) {
+                const ext = name.substring(extIndex);
+                const base = name.substring(0, extIndex);
+                if (base.length > maxLength - ext.length) {
+                    return base.substring(0, maxLength - ext.length - 2) + '..' + ext;
+                }
+            }
+            return name.substring(0, maxLength) + '...';
+        }
+
+        function initKeyboard() {
+            keyboard.innerHTML = '';
+            SHAPE_LAYOUT.forEach((shapeType, index) => {
+                const key = document.createElement('div');
+                key.className = 'key';
+                key.id = `sky-key-${index}`;
+                
+                // 形狀
+                const shape = document.createElement('div');
+                shape.className = `shape-${shapeType}`;
+                
+                // 波紋
+                const ripple = document.createElement('div');
+                ripple.className = 'ripple';
+                
+                key.appendChild(shape);
+                key.appendChild(ripple);
+                keyboard.appendChild(key);
+
+                key.addEventListener('mousedown', () => playOneNote(SKY_NOTES[index], index));
+            });
+        }
+
+        function playOneNote(midiNote, index) {
+            if (!synth) initAudio();
+            const now = Tone.now();
+            const freq = Tone.Frequency(midiNote, "midi");
+            synth.triggerAttackRelease(freq, "8n", now);
+            highlightKey(index);
+        }
+
+        function highlightKey(index) {
+            const el = document.getElementById(`sky-key-${index}`);
+            if (el) {
+                el.classList.remove('active'); void el.offsetWidth; el.classList.add('active');
+                setTimeout(() => el.classList.remove('active'), 250);
+            }
+        }
+
+        async function handleMidiFile(files) {
+            if (files.length === 0) return;
+            stopPlay();
+            statusMsg.innerText = "解析中...";
+            
+            const btn = document.getElementById('midiBtn');
+            btn.innerText = '📂 ' + truncateName(files[0].name, 8);
+            btn.title = files[0].name;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try { currentMidi = new Midi(e.target.result); autoRecommend(); } 
+                catch (err) { statusMsg.innerText = "失敗"; }
+            };
+            reader.readAsArrayBuffer(files[0]);
+        }
+
+        function handleBgFile(files) {
+            if (files.length === 0) return;
+            const btn = document.getElementById('bgBtn');
+            btn.innerText = '🖼️ ' + truncateName(files[0].name, 8);
+            btn.title = files[0].name;
+
+            const file = files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                body.style.backgroundImage = `url('${e.target.result}')`;
+                body.classList.add('custom-bg');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function autoRecommend() {
+            if(!currentMidi) return;
+            let bestShift = 0;
+            let minInvalid = Infinity;
+            for(let s = -11; s <= 11; s++) {
+                let invalid = 0;
+                currentMidi.tracks.forEach(track => {
+                    track.notes.forEach(note => {
+                        let m = note.midi + s;
+                        while (m < 60) m += 12; while (m > 84) m -= 12;
+                        if (!SKY_NOTES.includes(m)) invalid++;
+                    });
+                });
+                if(invalid < minInvalid) { minInvalid = invalid; bestShift = s; }
+            }
+            shiftAmount = bestShift;
+            statusMsg.innerText = `就緒 (自動轉調 ${shiftAmount > 0 ? '+' : ''}${shiftAmount})`;
+        }
+
+        async function changeInstrument() {
+            if (!synth) { await initAudio(); return; }
+            const type = document.getElementById('instrumentSelect').value;
+            synth.releaseAll();
+            switch(type) {
+                case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); synth.volume.value = -5; break;
+                case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); synth.volume.value = -8; break;
+                case 'synth': synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); synth.volume.value = -10; break;
+                case 'harp': default: synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.8 } }); synth.volume.value = -5; break;
+            }
+        }
+
+        async function initAudio() {
+            if (!synth) {
+                await Tone.start();
+                synth = new Tone.PolySynth(Tone.Synth).toDestination();
+                changeInstrument();
+            }
+        }
+
+        async function togglePlay() {
+            await initAudio();
+            if (isPlaying) { stopPlay(); } else {
+                if (!currentMidi) return;
+                scheduleMusic();
+                Tone.Transport.start();
+                playBtn.innerText = "⏸ 暫停";
+                isPlaying = true;
+            }
+        }
+
+        function stopPlay() {
+            if(synth) synth.releaseAll();
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+            document.querySelectorAll('.key.active').forEach(el => el.classList.remove('active'));
+            playBtn.innerText = "▶ 播放";
+            isPlaying = false;
+        }
+
+        function scheduleMusic() {
+            Tone.Transport.cancel();
+            let endTime = 0;
+            currentMidi.tracks.forEach(track => {
+                track.notes.forEach(note => {
+                    let playMidi = note.midi + shiftAmount;
+                    while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
+                    const keyIndex = SKY_NOTES.indexOf(playMidi);
+                    if (keyIndex !== -1) {
+                        Tone.Transport.schedule((time) => {
+                            const freq = Tone.Frequency(playMidi, "midi");
+                            synth.triggerAttackRelease(freq, note.duration, time);
+                            Tone.Draw.schedule(() => highlightKey(keyIndex), time);
+                        }, note.time);
+                        if(note.time + note.duration > endTime) endTime = note.time + note.duration;
+                    }
+                });
+            });
+            Tone.Transport.schedule(() => stopPlay(), endTime + 1);
+        }
+
+        // 隱藏/顯示控制面板
+        let controlsVisible = true;
+        function toggleControls() {
+            controlsVisible = !controlsVisible;
+            if (controlsVisible) {
+                controlsPanel.classList.remove('hidden');
+                // 顯示時按鈕完全不透明
+                toggleBtn.classList.remove('dimmed');
+            } else {
+                controlsPanel.classList.add('hidden');
+                // 隱藏時按鈕稍微變淡，但圖示依然是眼睛
+                toggleBtn.classList.add('dimmed');
+            }
+        }
+
+        initKeyboard();
+
+    </script>
+</body>
+</html>
