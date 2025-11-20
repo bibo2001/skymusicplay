@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky 自動演奏機 (V26 經典延音版)</title>
+    <title>Sky 自動演奏機 (V27 防爆音版)</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -11,18 +11,12 @@
     <style>
         :root {
             --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
-            
-            /* V23 經典樣式 */
             --key-bg: rgba(0, 0, 0, 0.25); 
             --key-border: rgba(255, 255, 255, 0.5);
             --line-color: #ffffff; 
             --neon-glow: 0 0 4px rgba(255, 255, 255, 0.4); 
-            
-            /* 按下時 */
             --active-bg: rgba(255, 255, 255, 0.3); 
             --active-border: #ffffff;
-            
-            /* UI */
             --control-bg: rgba(44, 44, 46, 0.9);
             --control-border: rgba(255, 255, 255, 0.15);
         }
@@ -90,6 +84,12 @@
         }
         input[type="color"] { border: none; width: 24px; height: 24px; cursor: pointer; background: none; padding: 0; border-radius: 50%; }
         .color-label { font-size: 12px; color: #ccc; }
+        
+        /* 音量拉桿 */
+        .vol-wrapper {
+            display: flex; align-items: center; gap: 5px;
+        }
+        input[type="range"] { width: 60px; cursor: pointer; }
 
         .separator { width: 1px; height: 18px; background: rgba(255,255,255,0.2); margin: 0 2px; }
 
@@ -148,13 +148,12 @@
 
         /* --- Active State --- */
         .key.active {
-            transform: scale(0.85); /* 縮小 */
+            transform: scale(0.85);
             background: var(--active-bg);
             border-color: #fff;
             transition: none;
         }
 
-        /* 亮圈擴散動畫 */
         .key::after {
             content: ''; position: absolute;
             top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -179,15 +178,19 @@
     <div class="bg-stars"></div>
 
     <div class="controls" id="controlsPanel">
-        <input type="file" id="fileInput" accept=".mid,.midi,.txt,.json" onchange="handleFileSelect(this.files)" style="display:none">
-        <button class="btn" id="fileBtn" onclick="document.getElementById('fileInput').click()">📂 上傳 譜檔</button>
+        <input type="file" id="midiFileInput" accept=".mid,.midi,.txt,.json" onchange="handleFileSelect(this.files)" style="display:none">
+        <button class="btn" id="fileBtn" onclick="document.getElementById('midiFileInput').click()">📂 譜檔</button>
         
         <input type="file" id="bgFileInput" accept="image/*" onchange="handleBgFile(this.files)" style="display:none">
-        <button class="btn" id="bgBtn" onclick="document.getElementById('bgFileInput').click()">🖼️ 上傳背景</button>
+        <button class="btn" id="bgBtn" onclick="document.getElementById('bgFileInput').click()">🖼️ 背景</button>
 
         <div class="color-wrapper" title="自訂線條顏色">
             <input type="color" id="lineColorPicker" value="#ffffff" oninput="updateLineColor(this.value)">
-            <span class="color-label">線條</span>
+        </div>
+        
+        <div class="vol-wrapper" title="音量">
+            <span style="font-size:12px">🔊</span>
+            <input type="range" id="volumeControl" min="-30" max="0" value="-10" oninput="updateVolume(this.value)">
         </div>
 
         <select id="instrumentSelect" onchange="changeInstrument()">
@@ -198,7 +201,7 @@
                 <option value="synth">電子音</option>
             </optgroup>
             <optgroup label="外部音源">
-                <option value="custom">✨ 自訂/原聲 (sounds/)</option>
+                <option value="custom">✨ 自訂/原聲</option>
             </optgroup>
         </select>
 
@@ -206,9 +209,9 @@
 
         <button class="btn btn-play" id="playBtn" onclick="togglePlay()">▶ 播放</button>
         <button class="btn" onclick="stopPlay()">■ 停止</button>
-        <button class="btn" onclick="downloadScore()">📥 下載圖檔</button>
+        <button class="btn" onclick="downloadScore()">📥 截圖</button>
         
-        <span id="statusMsg">請選擇檔案...</span>
+        <span id="statusMsg">請上傳檔案...</span>
     </div>
 
     <div class="instrument-wrapper">
@@ -219,9 +222,9 @@
 
     <script>
         const SHAPE_LAYOUT = [
-            'compound', 'diamond', 'circle', 'diamond', 'circle',    // Row 1
-            'circle', 'diamond', 'compound', 'diamond', 'circle',    // Row 2
-            'circle', 'diamond', 'circle', 'diamond', 'compound'     // Row 3
+            'compound', 'diamond', 'circle', 'diamond', 'circle',    
+            'circle', 'diamond', 'compound', 'diamond', 'circle',    
+            'circle', 'diamond', 'circle', 'diamond', 'compound'     
         ];
 
         const SKY_NOTES = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84];
@@ -232,6 +235,10 @@
         let shiftAmount = 0;
         let isPlaying = false;
         
+        // 防爆音限制器 (Limiter)
+        // threshold: -2dB (超過這個音量就會被壓下來)
+        const limiter = new Tone.Limiter(-2).toDestination();
+
         const keyboard = document.getElementById('keyboard');
         const statusMsg = document.getElementById('statusMsg');
         const playBtn = document.getElementById('playBtn');
@@ -239,17 +246,17 @@
         const controlsPanel = document.getElementById('controlsPanel');
         const toggleBtn = document.getElementById('toggleControlsBtn');
 
-        function truncateName(name, maxLength = 8) {
+        function truncateName(name, maxLength = 6) {
             if (name.length <= maxLength) return name;
             const extIndex = name.lastIndexOf('.');
             if (extIndex !== -1) {
                 const ext = name.substring(extIndex);
                 const base = name.substring(0, extIndex);
-                if (base.length > maxLength - ext.length - 2) {
-                    return base.substring(0, maxLength - ext.length - 2) + '..' + ext;
+                if (base.length > maxLength - ext.length - 1) {
+                    return base.substring(0, maxLength - ext.length - 1) + '..' + ext;
                 }
             }
-            return name.substring(0, maxLength) + '...';
+            return name.substring(0, maxLength) + '..';
         }
 
         function initKeyboard() {
@@ -269,8 +276,7 @@
                     ensureAudioInit().then(() => {
                         if(globalSynth) {
                             const now = Tone.now();
-                            // 手動點擊也給予足夠的長度 (1.5秒)，讓它自然衰減
-                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 1.5, now);
+                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 2.0, now);
                         }
                         key.classList.remove('active');
                         void key.offsetWidth; 
@@ -288,11 +294,18 @@
             const b = parseInt(color.substr(5,2), 16);
             document.documentElement.style.setProperty('--neon-glow', `0 0 4px rgba(${r},${g},${b},0.6)`);
         }
+        
+        function updateVolume(val) {
+            if(globalSynth) {
+                globalSynth.volume.value = val;
+            }
+        }
 
         async function handleFileSelect(files) {
             if (files.length === 0) return;
             stopPlay();
             statusMsg.innerText = "解析中...";
+            
             const file = files[0];
             const btn = document.getElementById('fileBtn');
             btn.innerText = '📂 ' + truncateName(file.name);
@@ -302,8 +315,12 @@
             if (fileName.endsWith('.mid') || fileName.endsWith('.midi')) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    try { currentMidi = new Midi(e.target.result); autoRecommend(); } 
-                    catch (err) { statusMsg.innerText = "MIDI 解析失敗"; }
+                    try {
+                        currentMidi = new Midi(e.target.result);
+                        autoRecommend();
+                    } catch (err) {
+                        statusMsg.innerText = "MIDI 解析失敗";
+                    }
                 };
                 reader.readAsArrayBuffer(file);
             } else if (fileName.endsWith('.txt') || fileName.endsWith('.json')) {
@@ -348,9 +365,9 @@
                 if (convertedNotes.length === 0) { statusMsg.innerText = "無有效音符"; return; }
                 currentMidi = { tracks: [ { notes: convertedNotes } ], header: null };
                 shiftAmount = 0;
-                statusMsg.innerText = `就緒 (腳本: ${convertedNotes.length} 音)`;
+                statusMsg.innerText = `就緒 (${convertedNotes.length} 音)`;
 
-            } catch (err) { statusMsg.innerText = "腳本解析失敗"; }
+            } catch (err) { statusMsg.innerText = "解析失敗"; }
         }
 
         function handleBgFile(files) {
@@ -395,6 +412,7 @@
 
         async function changeInstrument() {
             const type = document.getElementById('instrumentSelect').value;
+            const vol = document.getElementById('volumeControl').value;
             if(isPlaying) stopPlay();
             if (globalSynth) { globalSynth.releaseAll(); }
             playBtn.disabled = true;
@@ -411,7 +429,11 @@
                     baseUrl: "./sounds/",
                     onload: () => {
                         globalSynth = sampler;
-                        globalSynth.volume.value = -5;
+                        // 連接到 Limiter
+                        globalSynth.disconnect();
+                        globalSynth.connect(limiter);
+                        globalSynth.volume.value = vol;
+                        
                         playBtn.disabled = false;
                         playBtn.innerText = "▶ 播放";
                         statusMsg.innerText = "自訂音色就緒";
@@ -423,16 +445,21 @@
                         document.getElementById('instrumentSelect').value = 'harp';
                         changeInstrument();
                     }
-                }).toDestination();
+                }); // 這裡不直接 toDestination，而是在 onload 連接
             } else {
-                synth = new Tone.PolySynth(Tone.Synth).toDestination();
+                // 合成器
+                synth = new Tone.PolySynth(Tone.Synth);
+                // 連接到 Limiter
+                synth.connect(limiter);
                 globalSynth = synth;
+                globalSynth.volume.value = vol;
+
                 const commonEnvelope = { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.1 };
                 switch(type) {
-                    case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); synth.volume.value = -5; break;
-                    case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); synth.volume.value = -8; break;
-                    case 'synth': synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); synth.volume.value = -10; break;
-                    case 'harp': default: synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope }); synth.volume.value = -5; break;
+                    case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); break;
+                    case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); break;
+                    case 'synth': synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); break;
+                    case 'harp': default: synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope }); break;
                 }
                 playBtn.disabled = false;
                 playBtn.innerText = "▶ 播放";
@@ -463,14 +490,14 @@
         function scheduleMusic() {
             Tone.Transport.cancel();
             let endTime = 0;
-            // 視覺保持短促，但聲音給予足夠的衰減時間
-            const AUDIO_DURATION_MIN = 2.0; // 讓採樣自然播放至少 2 秒 (Natural Decay)
-            const VISUAL_DURATION = 0.15;   // 視覺保持斷奏感
+            // 聲音拉長到 2秒，讓其自然衰減，避免斷音
+            const AUDIO_DURATION = 2.0; 
+            const VISUAL_DURATION = 0.15; 
 
             currentMidi.tracks.forEach(track => {
                 track.notes.forEach(note => {
                     let playMidi = note.midi;
-                    if (currentMidi.header) {
+                    if (currentMidi.header) { // MIDI file
                         playMidi += shiftAmount;
                         while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
                     }
@@ -478,11 +505,8 @@
                     const keyIndex = SKY_NOTES.indexOf(playMidi);
                     if (keyIndex !== -1) {
                         Tone.Transport.schedule((time) => {
-                            // 音訊：確保有足夠時間讓 Sample 播放完 (不切斷)
-                            const duration = Math.max(note.duration, AUDIO_DURATION_MIN);
-                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[keyIndex], "midi"), duration, time);
+                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[keyIndex], "midi"), AUDIO_DURATION, time);
 
-                            // 視覺：快速亮起
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) {
@@ -492,7 +516,6 @@
                                 }
                             }, time);
 
-                            // 視覺：快速熄滅
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) el.classList.remove('active');
