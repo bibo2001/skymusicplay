@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky 自動演奏機 (V27 防爆音版)</title>
+    <title>Sky 自動演奏機 (V30 抒情古典版)</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -11,12 +11,18 @@
     <style>
         :root {
             --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
+            
+            /* V23 經典樣式 */
             --key-bg: rgba(0, 0, 0, 0.25); 
             --key-border: rgba(255, 255, 255, 0.5);
             --line-color: #ffffff; 
             --neon-glow: 0 0 4px rgba(255, 255, 255, 0.4); 
+            
+            /* 按下時 */
             --active-bg: rgba(255, 255, 255, 0.3); 
             --active-border: #ffffff;
+            
+            /* UI */
             --control-bg: rgba(44, 44, 46, 0.9);
             --control-border: rgba(255, 255, 255, 0.15);
         }
@@ -84,11 +90,8 @@
         }
         input[type="color"] { border: none; width: 24px; height: 24px; cursor: pointer; background: none; padding: 0; border-radius: 50%; }
         .color-label { font-size: 12px; color: #ccc; }
-        
-        /* 音量拉桿 */
-        .vol-wrapper {
-            display: flex; align-items: center; gap: 5px;
-        }
+
+        .vol-wrapper { display: flex; align-items: center; gap: 5px; }
         input[type="range"] { width: 60px; cursor: pointer; }
 
         .separator { width: 1px; height: 18px; background: rgba(255,255,255,0.2); margin: 0 2px; }
@@ -146,7 +149,6 @@
             box-shadow: var(--neon-glow);
         }
 
-        /* --- Active State --- */
         .key.active {
             transform: scale(0.85);
             background: var(--active-bg);
@@ -235,8 +237,6 @@
         let shiftAmount = 0;
         let isPlaying = false;
         
-        // 防爆音限制器 (Limiter)
-        // threshold: -2dB (超過這個音量就會被壓下來)
         const limiter = new Tone.Limiter(-2).toDestination();
 
         const keyboard = document.getElementById('keyboard');
@@ -276,7 +276,7 @@
                     ensureAudioInit().then(() => {
                         if(globalSynth) {
                             const now = Tone.now();
-                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 2.0, now);
+                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 1.8, now);
                         }
                         key.classList.remove('active');
                         void key.offsetWidth; 
@@ -296,21 +296,17 @@
         }
         
         function updateVolume(val) {
-            if(globalSynth) {
-                globalSynth.volume.value = val;
-            }
+            if(globalSynth) globalSynth.volume.value = val;
         }
 
         async function handleFileSelect(files) {
             if (files.length === 0) return;
             stopPlay();
             statusMsg.innerText = "解析中...";
-            
             const file = files[0];
             const btn = document.getElementById('fileBtn');
             btn.innerText = '📂 ' + truncateName(file.name);
             btn.title = file.name;
-
             const fileName = file.name.toLowerCase();
             if (fileName.endsWith('.mid') || fileName.endsWith('.midi')) {
                 const reader = new FileReader();
@@ -327,9 +323,7 @@
                 const reader = new FileReader();
                 reader.onload = function(e) { parseSkyText(e.target.result); };
                 reader.readAsText(file);
-            } else {
-                statusMsg.innerText = "格式錯誤";
-            }
+            } else { statusMsg.innerText = "格式錯誤"; }
         }
 
         function parseSkyText(text) {
@@ -343,7 +337,6 @@
                          });
                     } else { rawList = data; }
                 } else if (data.songNotes) { rawList = data.songNotes; }
-
                 const convertedNotes = [];
                 rawList.forEach(noteItem => {
                     let time = noteItem.time !== undefined ? noteItem.time : (noteItem.startTime || 0);
@@ -361,12 +354,10 @@
                         }
                     }
                 });
-
                 if (convertedNotes.length === 0) { statusMsg.innerText = "無有效音符"; return; }
                 currentMidi = { tracks: [ { notes: convertedNotes } ], header: null };
                 shiftAmount = 0;
                 statusMsg.innerText = `就緒 (${convertedNotes.length} 音)`;
-
             } catch (err) { statusMsg.innerText = "解析失敗"; }
         }
 
@@ -417,6 +408,10 @@
             if (globalSynth) { globalSynth.releaseAll(); }
             playBtn.disabled = true;
             
+            // V30: 抒情優化 (Release 延長至 2.0s)
+            const NATURAL_RELEASE = 2.0; 
+            const SHORT_ATTACK = 0.01;
+
             if (type === 'custom') {
                 playBtn.innerText = "⏳ 載入...";
                 statusMsg.innerText = "下載音效...";
@@ -427,13 +422,12 @@
                         'F5': '11.mp3', 'G5': '12.mp3', 'A5': '13.mp3', 'B5': '14.mp3', 'C6': '15.mp3'
                     },
                     baseUrl: "./sounds/",
+                    release: NATURAL_RELEASE, 
                     onload: () => {
                         globalSynth = sampler;
-                        // 連接到 Limiter
                         globalSynth.disconnect();
                         globalSynth.connect(limiter);
                         globalSynth.volume.value = vol;
-                        
                         playBtn.disabled = false;
                         playBtn.innerText = "▶ 播放";
                         statusMsg.innerText = "自訂音色就緒";
@@ -445,20 +439,18 @@
                         document.getElementById('instrumentSelect').value = 'harp';
                         changeInstrument();
                     }
-                }); // 這裡不直接 toDestination，而是在 onload 連接
+                }); 
             } else {
-                // 合成器
                 synth = new Tone.PolySynth(Tone.Synth);
-                // 連接到 Limiter
                 synth.connect(limiter);
                 globalSynth = synth;
                 globalSynth.volume.value = vol;
-
-                const commonEnvelope = { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.1 };
+                
+                const commonEnvelope = { attack: SHORT_ATTACK, decay: 0.1, sustain: 0.5, release: NATURAL_RELEASE };
                 switch(type) {
-                    case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); break;
-                    case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); break;
-                    case 'synth': synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); break;
+                    case 'piano': synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope }); break;
+                    case 'guitar': synth.set({ oscillator: { type: "sawtooth" }, envelope: commonEnvelope }); break;
+                    case 'synth': synth.set({ oscillator: { type: "square" }, envelope: commonEnvelope }); break;
                     case 'harp': default: synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope }); break;
                 }
                 playBtn.disabled = false;
@@ -490,14 +482,14 @@
         function scheduleMusic() {
             Tone.Transport.cancel();
             let endTime = 0;
-            // 聲音拉長到 2秒，讓其自然衰減，避免斷音
-            const AUDIO_DURATION = 2.0; 
+            // V30: 實音 1.8秒 (Body)
+            const AUDIO_BODY = 1.8; 
             const VISUAL_DURATION = 0.15; 
 
             currentMidi.tracks.forEach(track => {
                 track.notes.forEach(note => {
                     let playMidi = note.midi;
-                    if (currentMidi.header) { // MIDI file
+                    if (currentMidi.header) { 
                         playMidi += shiftAmount;
                         while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
                     }
@@ -505,7 +497,7 @@
                     const keyIndex = SKY_NOTES.indexOf(playMidi);
                     if (keyIndex !== -1) {
                         Tone.Transport.schedule((time) => {
-                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[keyIndex], "midi"), AUDIO_DURATION, time);
+                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[keyIndex], "midi"), AUDIO_BODY, time);
 
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
