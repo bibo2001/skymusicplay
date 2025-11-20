@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky 自動演奏機 (V23 根音修正版)</title>
+    <title>Sky 自動演奏機 (V26 經典延音版)</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -12,7 +12,7 @@
         :root {
             --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
             
-            /* 介面風格 */
+            /* V23 經典樣式 */
             --key-bg: rgba(0, 0, 0, 0.25); 
             --key-border: rgba(255, 255, 255, 0.5);
             --line-color: #ffffff; 
@@ -126,7 +126,6 @@
             transition: transform 0.1s ease-out, background 0.1s, border-color 0.1s;
         }
 
-        /* 線條樣式 */
         .shape-diamond, .shape-circle, .shape-compound {
             position: absolute;
             border: 3px solid var(--line-color); 
@@ -135,38 +134,21 @@
             transition: transform 0.1s;
         }
 
-        /* 菱形 */
-        .shape-diamond { 
-            width: 44px; height: 44px; 
-            transform: rotate(45deg); 
-            border-radius: 4px; 
-        }
-        
-        /* 圓形 */
-        .shape-circle { 
-            width: 54px; height: 54px; 
-            border-radius: 50%; 
-        }
-        
-        /* 複合圖形：外部菱形 + 內部圓形 */
+        .shape-diamond { width: 44px; height: 44px; transform: rotate(45deg); border-radius: 4px; }
+        .shape-circle { width: 54px; height: 54px; border-radius: 50%; }
         .shape-compound {
-            width: 44px; height: 44px; 
-            transform: rotate(45deg); /* 外部是菱形 */
-            border-radius: 4px;
+            width: 44px; height: 44px; transform: rotate(45deg); border-radius: 4px;
             display: flex; align-items: center; justify-content: center;
         }
         .shape-compound::after {
-            content: ''; 
-            width: 30px; height: 30px; /* 內部小圓 */
-            border: 3px solid var(--line-color);
-            border-radius: 50%; /* 圓形 */
+            content: ''; width: 30px; height: 30px;
+            border: 3px solid var(--line-color); border-radius: 50%;
             box-shadow: var(--neon-glow);
-            /* 因為父層轉了45度，這裡不需要反轉，圓形轉了還是圓形 */
         }
 
         /* --- Active State --- */
         .key.active {
-            transform: scale(0.85);
+            transform: scale(0.85); /* 縮小 */
             background: var(--active-bg);
             border-color: #fff;
             transition: none;
@@ -197,8 +179,8 @@
     <div class="bg-stars"></div>
 
     <div class="controls" id="controlsPanel">
-        <input type="file" id="midiFileInput" accept=".mid,.midi" onchange="handleMidiFile(this.files)" style="display:none">
-        <button class="btn" id="midiBtn" onclick="document.getElementById('midiFileInput').click()">📂 上傳 MIDI</button>
+        <input type="file" id="fileInput" accept=".mid,.midi,.txt,.json" onchange="handleFileSelect(this.files)" style="display:none">
+        <button class="btn" id="fileBtn" onclick="document.getElementById('fileInput').click()">📂 上傳 譜檔</button>
         
         <input type="file" id="bgFileInput" accept="image/*" onchange="handleBgFile(this.files)" style="display:none">
         <button class="btn" id="bgBtn" onclick="document.getElementById('bgFileInput').click()">🖼️ 上傳背景</button>
@@ -236,11 +218,10 @@
     <div id="toggleControlsBtn" onclick="toggleControls()">👁️</div>
 
     <script>
-        // V23 修正排列：C4(0), C5(7), C6(14) 為複合圖形
         const SHAPE_LAYOUT = [
-            'compound', 'diamond', 'circle', 'diamond', 'circle',    // Row 1: C4 是 Compound
-            'circle', 'diamond', 'compound', 'diamond', 'circle',    // Row 2: C5 是 Compound
-            'circle', 'diamond', 'circle', 'diamond', 'compound'     // Row 3: C6 是 Compound
+            'compound', 'diamond', 'circle', 'diamond', 'circle',    // Row 1
+            'circle', 'diamond', 'compound', 'diamond', 'circle',    // Row 2
+            'circle', 'diamond', 'circle', 'diamond', 'compound'     // Row 3
         ];
 
         const SKY_NOTES = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84];
@@ -288,7 +269,8 @@
                     ensureAudioInit().then(() => {
                         if(globalSynth) {
                             const now = Tone.now();
-                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 0.3, now);
+                            // 手動點擊也給予足夠的長度 (1.5秒)，讓它自然衰減
+                            globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 1.5, now);
                         }
                         key.classList.remove('active');
                         void key.offsetWidth; 
@@ -307,19 +289,68 @@
             document.documentElement.style.setProperty('--neon-glow', `0 0 4px rgba(${r},${g},${b},0.6)`);
         }
 
-        async function handleMidiFile(files) {
+        async function handleFileSelect(files) {
             if (files.length === 0) return;
             stopPlay();
             statusMsg.innerText = "解析中...";
-            const btn = document.getElementById('midiBtn');
-            btn.innerText = '📂 ' + truncateName(files[0].name);
-            btn.title = files[0].name;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try { currentMidi = new Midi(e.target.result); autoRecommend(); } 
-                catch (err) { statusMsg.innerText = "失敗"; }
-            };
-            reader.readAsArrayBuffer(files[0]);
+            const file = files[0];
+            const btn = document.getElementById('fileBtn');
+            btn.innerText = '📂 ' + truncateName(file.name);
+            btn.title = file.name;
+
+            const fileName = file.name.toLowerCase();
+            if (fileName.endsWith('.mid') || fileName.endsWith('.midi')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try { currentMidi = new Midi(e.target.result); autoRecommend(); } 
+                    catch (err) { statusMsg.innerText = "MIDI 解析失敗"; }
+                };
+                reader.readAsArrayBuffer(file);
+            } else if (fileName.endsWith('.txt') || fileName.endsWith('.json')) {
+                const reader = new FileReader();
+                reader.onload = function(e) { parseSkyText(e.target.result); };
+                reader.readAsText(file);
+            } else {
+                statusMsg.innerText = "格式錯誤";
+            }
+        }
+
+        function parseSkyText(text) {
+            try {
+                let data = JSON.parse(text);
+                let rawList = [];
+                if (Array.isArray(data)) {
+                    if (data.length > 0 && data[0].notes) {
+                         data.forEach(frame => {
+                             if(frame.notes) frame.notes.forEach(n => rawList.push({ time: frame.time, key: n.key }));
+                         });
+                    } else { rawList = data; }
+                } else if (data.songNotes) { rawList = data.songNotes; }
+
+                const convertedNotes = [];
+                rawList.forEach(noteItem => {
+                    let time = noteItem.time !== undefined ? noteItem.time : (noteItem.startTime || 0);
+                    let keyStr = noteItem.key || ""; 
+                    let duration = noteItem.duration || 200;
+                    const match = keyStr.match(/Key(\d+)/i);
+                    if (match) {
+                        let keyIndex = parseInt(match[1]);
+                        if (keyIndex >= 0 && keyIndex < 15) {
+                            convertedNotes.push({
+                                midi: SKY_NOTES[keyIndex],
+                                time: time / 1000,
+                                duration: duration / 1000
+                            });
+                        }
+                    }
+                });
+
+                if (convertedNotes.length === 0) { statusMsg.innerText = "無有效音符"; return; }
+                currentMidi = { tracks: [ { notes: convertedNotes } ], header: null };
+                shiftAmount = 0;
+                statusMsg.innerText = `就緒 (腳本: ${convertedNotes.length} 音)`;
+
+            } catch (err) { statusMsg.innerText = "腳本解析失敗"; }
         }
 
         function handleBgFile(files) {
@@ -337,7 +368,8 @@
         }
 
         function autoRecommend() {
-            if(!currentMidi) return;
+            if(!currentMidi || !currentMidi.tracks) return;
+            if (!currentMidi.header) { shiftAmount = 0; return; }
             stopPlay();
             let bestShift = 0;
             let minInvalid = Infinity;
@@ -411,7 +443,7 @@
         async function togglePlay() {
             await ensureAudioInit();
             if (isPlaying) { stopPlay(); } else {
-                if (!currentMidi) { alert("請先上傳 MIDI 檔案！"); return; }
+                if (!currentMidi) { alert("請先上傳檔案！"); return; }
                 scheduleMusic();
                 Tone.Transport.start();
                 playBtn.innerText = "⏸ 暫停";
@@ -431,18 +463,26 @@
         function scheduleMusic() {
             Tone.Transport.cancel();
             let endTime = 0;
-            const FIXED_DURATION = 0.3; 
-            const VISUAL_DURATION = 0.15; 
+            // 視覺保持短促，但聲音給予足夠的衰減時間
+            const AUDIO_DURATION_MIN = 2.0; // 讓採樣自然播放至少 2 秒 (Natural Decay)
+            const VISUAL_DURATION = 0.15;   // 視覺保持斷奏感
 
             currentMidi.tracks.forEach(track => {
                 track.notes.forEach(note => {
-                    let playMidi = note.midi + shiftAmount;
-                    while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
+                    let playMidi = note.midi;
+                    if (currentMidi.header) {
+                        playMidi += shiftAmount;
+                        while (playMidi < 60) playMidi += 12; while (playMidi > 84) playMidi -= 12;
+                    }
+
                     const keyIndex = SKY_NOTES.indexOf(playMidi);
                     if (keyIndex !== -1) {
                         Tone.Transport.schedule((time) => {
-                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(playMidi, "midi"), FIXED_DURATION, time);
+                            // 音訊：確保有足夠時間讓 Sample 播放完 (不切斷)
+                            const duration = Math.max(note.duration, AUDIO_DURATION_MIN);
+                            if(globalSynth) globalSynth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[keyIndex], "midi"), duration, time);
 
+                            // 視覺：快速亮起
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) {
@@ -452,6 +492,7 @@
                                 }
                             }, time);
 
+                            // 視覺：快速熄滅
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) el.classList.remove('active');
