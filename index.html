@@ -3,26 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sky 自動演奏機 (V9 延音修正版)</title>
+    <title>Sky 自動演奏機 (V11 自訂顏色版)</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     
     <style>
         :root {
             --bg-gradient: radial-gradient(circle at center bottom, #1a0e2e 0%, #080510 100%);
-            --key-bg: rgba(0, 0, 0, 0.6); 
+            --key-bg: rgba(0, 0, 0, 0.4); 
             
-            /* 霓虹配色：白粉系 */
-            --line-color-base: #ffffff; 
-            --neon-shadow: 0 0 3px rgba(255, 255, 255, 0.8), 0 0 6px rgba(255, 200, 210, 0.3);
+            /* --- 自訂變數區 --- */
+            --line-color: #ffffff; /* 線條預設白，可自訂 */
+            --neon-glow: rgba(255, 255, 255, 0.5); /* 線條光暈 */
             
-            /* 按下時：亮白核心 + 強烈粉光 */
-            --active-border: #ffffff;
-            --active-shadow: 0 0 10px #ffffff, 0 0 25px #ffb7c5, 0 0 40px #ff69b4; 
+            /* 按下時的樣式 (回歸半透明亮白) */
+            --active-bg: rgba(255, 255, 255, 0.6); 
+            --active-scale: 0.85;
             
-            --control-bg: rgba(0, 0, 0, 0.4);
+            /* UI */
+            --control-bg: rgba(44, 44, 46, 0.9);
             --control-border: rgba(255, 255, 255, 0.15);
-            --button-bg: rgba(255, 255, 255, 0.1);
         }
 
         body {
@@ -63,17 +63,17 @@
             top: 20px;
             background: var(--control-bg);
             backdrop-filter: blur(10px);
-            padding: 10px 20px;
-            border-radius: 30px;
+            padding: 8px 15px;
+            border-radius: 50px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
             border: 1px solid var(--control-border);
             z-index: 100;
             flex-wrap: wrap;
             justify-content: center;
-            max-width: 95%;
-            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            transition: transform 0.3s, opacity 0.3s;
         }
         .controls.hidden {
             transform: translateY(-150%);
@@ -82,68 +82,62 @@
         }
 
         .btn {
-            background: var(--button-bg);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.2);
-            padding: 8px 16px;
+            background: rgba(255,255,255,0.1);
+            color: #eee;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px 14px;
             border-radius: 20px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             transition: 0.2s;
             white-space: nowrap;
-            min-width: 80px;
-            text-align: center;
         }
-        .btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.5); }
-        .btn-play { 
-            background: rgba(255, 255, 255, 0.9); 
-            color: #333; 
-            border: none; 
-            font-weight: bold; 
-            box-shadow: 0 0 10px rgba(255,255,255,0.3);
-        }
-        .btn-play:hover { background: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.6); }
+        .btn:hover { background: rgba(255,255,255,0.25); color: #fff; }
+        
+        .btn-play { background: #ff7675; color: #fff; border: none; font-weight: bold; }
+        .btn-play:hover { background: #ff5252; }
 
         select {
-            background: var(--button-bg);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.2);
-            padding: 8px 10px;
+            background: rgba(255,255,255,0.1);
+            color: #eee;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px 10px;
             border-radius: 20px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
-            transition: 0.2s;
         }
-        select:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
         option { background: #333; }
 
-        .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.15); margin: 0 5px; }
+        /* Color Picker Style */
+        .color-wrapper {
+            display: flex; align-items: center; gap: 5px;
+            background: rgba(255,255,255,0.1);
+            padding: 3px 10px 3px 3px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        input[type="color"] {
+            border: none; width: 24px; height: 24px; cursor: pointer;
+            background: none; padding: 0; border-radius: 50%;
+        }
+        .color-label { font-size: 12px; color: #ccc; }
 
-        /* Toggle Button */
+        .separator { width: 1px; height: 18px; background: rgba(255,255,255,0.2); margin: 0 2px; }
+
         #toggleControlsBtn {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 45px;
-            height: 45px;
-            background: rgba(0, 0, 0, 0.5);
+            position: fixed; bottom: 20px; right: 20px;
+            width: 45px; height: 45px;
+            background: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(5px);
             border: 1px solid rgba(255,255,255,0.3);
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 22px;
-            color: white;
-            z-index: 101;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 22px; color: white;
+            z-index: 101; transition: all 0.3s;
         }
-        #toggleControlsBtn:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.1); }
-        #toggleControlsBtn.dimmed { opacity: 0.6; }
-        #toggleControlsBtn.dimmed:hover { opacity: 1; }
+        #toggleControlsBtn:hover { transform: scale(1.1); background: rgba(0,0,0,0.8); }
+        #toggleControlsBtn.dimmed { opacity: 0.5; }
 
         /* --- Keyboard Grid --- */
         .instrument-wrapper { transform: scale(1.1); }
@@ -154,68 +148,66 @@
             gap: 15px;
         }
 
-        /* --- Key Styles --- */
+        /* --- Key Styles (最佳化延遲) --- */
         .key {
             width: 90px; height: 90px;
             background: var(--key-bg);
-            border-radius: 20px;
+            border-radius: 22px;
             display: flex; align-items: center; justify-content: center;
             position: relative;
-            transition: transform 0.1s, background 0.1s; /* 這裡不放 box-shadow 的 transition 以確保反應即時 */
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            
+            /* 關鍵修正：移除動畫，改用極速 transition */
+            /* 釋放時：0.2s 變回原狀 (有彈性) */
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s;
+            /* 確保 GPU 加速 */
+            will-change: transform, background;
         }
 
+        /* 線條：使用變數控制顏色 */
         .shape-diamond, .shape-circle, .shape-compound {
             position: absolute;
-            border: 2px solid var(--line-color-base); 
-            box-shadow: var(--neon-shadow);
-            transition: all 0.1s; /* 讓線條變化稍微平滑 */
+            border: 3px solid var(--line-color); 
+            box-shadow: 0 0 6px var(--neon-glow), inset 0 0 6px var(--neon-glow);
+            transition: all 0.1s;
             pointer-events: none;
         }
-        .shape-diamond { width: 42px; height: 42px; transform: rotate(45deg); border-radius: 3px; }
-        .shape-circle { width: 52px; height: 52px; border-radius: 50%; }
+
+        .shape-diamond { width: 40px; height: 40px; transform: rotate(45deg); border-radius: 4px; }
+        .shape-circle { width: 50px; height: 50px; border-radius: 50%; }
         .shape-compound {
-            width: 52px; height: 52px; border-radius: 50%;
+            width: 50px; height: 50px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
         }
         .shape-compound::after {
-            content: ''; width: 30px; height: 30px;
-            border: 2px solid var(--line-color-base);
-            transform: rotate(45deg); border-radius: 2px;
-            box-shadow: var(--neon-shadow);
+            content: ''; width: 28px; height: 28px;
+            border: 3px solid var(--line-color);
+            transform: rotate(45deg); border-radius: 3px;
+            box-shadow: 0 0 4px var(--neon-glow), inset 0 0 4px var(--neon-glow);
         }
 
-        /* --- Active Effects (Sustain) --- */
-        /* 移除 active 的 transition delay，讓它即時反應 */
+        /* --- Active State (零延遲觸發) --- */
         .key.active {
-            transform: scale(0.94);
-            background: rgba(255, 255, 255, 0.15); 
+            /* 按下時：瞬間變色，瞬間縮小 (0s duration) */
+            transition: none !important; 
+            
+            background: var(--active-bg); /* 變回半透明亮白 */
+            transform: scale(var(--active-scale));
+            box-shadow: 0 0 25px rgba(255,255,255,0.5); /* 整體發光 */
         }
         
+        /* 按下時線條變純白且更亮 */
         .key.active .shape-diamond, 
         .key.active .shape-circle, 
         .key.active .shape-compound,
         .key.active .shape-compound::after {
-            border-color: var(--active-border);
-            box-shadow: var(--active-shadow);
-            border-width: 3px; 
+            border-color: #ffffff;
+            box-shadow: 0 0 15px #ffffff, inset 0 0 10px #ffffff;
+            filter: brightness(1.5);
         }
 
-        .ripple {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 100%; height: 100%;
-            border: 2px solid rgba(255, 255, 255, 0.9);
-            border-radius: 20px; opacity: 0; pointer-events: none;
-        }
-        .key.active .ripple { animation: rippleEffect 0.35s ease-out; }
-        @keyframes rippleEffect {
-            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; border-width: 3px; }
-            100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; border-width: 0px; }
-        }
-
-        #statusMsg { color: #ccc; font-size: 14px; white-space: nowrap; margin-left: 5px; }
+        #statusMsg { color: #aaa; font-size: 12px; white-space: nowrap; margin-left: 5px; }
 
     </style>
 </head>
@@ -230,11 +222,21 @@
         <input type="file" id="bgFileInput" accept="image/*" onchange="handleBgFile(this.files)" style="display:none">
         <button class="btn" id="bgBtn" onclick="document.getElementById('bgFileInput').click()">🖼️ 上傳背景</button>
 
+        <div class="color-wrapper" title="自訂線條顏色">
+            <input type="color" id="lineColorPicker" value="#ffffff" oninput="updateLineColor(this.value)">
+            <span class="color-label">線條</span>
+        </div>
+
         <select id="instrumentSelect" onchange="changeInstrument()">
-            <option value="harp">豎琴</option>
-            <option value="piano">鋼琴</option>
-            <option value="guitar">吉他</option>
-            <option value="synth">Synth</option>
+            <optgroup label="內建合成音 (快速)">
+                <option value="harp" selected>預設豎琴</option>
+                <option value="piano">鋼琴</option>
+                <option value="guitar">吉他</option>
+                <option value="synth">電子音</option>
+            </optgroup>
+            <optgroup label="外部音源 (需上傳)">
+                <option value="custom">piano01 </option>
+            </optgroup>
         </select>
 
         <div class="separator"></div>
@@ -270,7 +272,7 @@
         const controlsPanel = document.getElementById('controlsPanel');
         const toggleBtn = document.getElementById('toggleControlsBtn');
 
-        function truncateName(name, maxLength = 12) {
+        function truncateName(name, maxLength = 8) {
             if (name.length <= maxLength) return name;
             const extIndex = name.lastIndexOf('.');
             if (extIndex !== -1) {
@@ -292,25 +294,31 @@
                 
                 const shape = document.createElement('div');
                 shape.className = `shape-${shapeType}`;
-                const ripple = document.createElement('div');
-                ripple.className = 'ripple';
                 
                 key.appendChild(shape);
-                key.appendChild(ripple);
                 keyboard.appendChild(key);
 
-                // 手動點擊時，給一個固定的短時長
                 key.addEventListener('mousedown', () => {
                     if (!synth) initAudio();
                     const now = Tone.now();
-                    // 假設手動點擊長度為 0.3秒
-                    synth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 0.3, now);
+                    synth.triggerAttackRelease(Tone.Frequency(SKY_NOTES[index], "midi"), 0.5, now);
                     
-                    // 視覺
+                    // 手動點擊視覺反饋
                     key.classList.add('active');
-                    setTimeout(() => key.classList.remove('active'), 300);
+                    // 模擬手指放開 (0.2s 後)
+                    setTimeout(() => key.classList.remove('active'), 200);
                 });
             });
+        }
+
+        // --- 顏色更新 ---
+        function updateLineColor(color) {
+            document.documentElement.style.setProperty('--line-color', color);
+            // 計算光暈顏色 (將 hex 轉為 rgba 半透明)
+            const r = parseInt(color.substr(1,2), 16);
+            const g = parseInt(color.substr(3,2), 16);
+            const b = parseInt(color.substr(5,2), 16);
+            document.documentElement.style.setProperty('--neon-glow', `rgba(${r},${g},${b},0.5)`);
         }
 
         async function handleMidiFile(files) {
@@ -319,7 +327,7 @@
             statusMsg.innerText = "解析中...";
             
             const btn = document.getElementById('midiBtn');
-            btn.innerText = '📂 ' + truncateName(files[0].name, 8);
+            btn.innerText = '📂 ' + truncateName(files[0].name);
             btn.title = files[0].name;
 
             const reader = new FileReader();
@@ -333,7 +341,7 @@
         function handleBgFile(files) {
             if (files.length === 0) return;
             const btn = document.getElementById('bgBtn');
-            btn.innerText = '🖼️ ' + truncateName(files[0].name, 8);
+            btn.innerText = '🖼️ ' + truncateName(files[0].name);
             btn.title = files[0].name;
 
             const file = files[0];
@@ -364,27 +372,95 @@
             statusMsg.innerText = `就緒 (自動轉調 ${shiftAmount > 0 ? '+' : ''}${shiftAmount})`;
         }
 
-        async function changeInstrument() {
-            if (!synth) { await initAudio(); return; }
-            const type = document.getElementById('instrumentSelect').value;
-            synth.releaseAll();
-            // 更新 Envelope: 增加 Sustain Level, 縮短 Release
-            // 這樣按住時有聲音，放開時馬上消失
-            const commonEnvelope = { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.1 };
+// 新增一個變數來管理採樣器
+        let sampler = null;
 
-            switch(type) {
-                case 'piano':
-                    synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope });
-                    synth.volume.value = -5; break;
-                case 'guitar':
-                    synth.set({ oscillator: { type: "sawtooth" }, envelope: commonEnvelope });
-                    synth.volume.value = -8; break;
-                case 'synth':
-                    synth.set({ oscillator: { type: "square" }, envelope: commonEnvelope });
-                    synth.volume.value = -10; break;
-                case 'harp': default:
-                    synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope });
-                    synth.volume.value = -5; break;
+        async function changeInstrument() {
+            // 確保 Tone.js 已啟動
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+            }
+
+            const type = document.getElementById('instrumentSelect').value;
+            const btn = document.getElementById('playBtn');
+            const originalText = "▶ 播放"; // 或是保留按鈕當前文字
+
+            // 1. 停止並釋放當前的聲音
+            if (synth) {
+                synth.releaseAll();
+                // 如果之前是合成器，我們可以保留變數；如果是採樣器，稍後會覆蓋
+            }
+
+            // 2. 判斷是用「外部採樣」還是「內建合成」
+            if (type === 'custom') {
+                // === 模式 A: 讀取 sounds 資料夾的 MP3 ===
+                
+                // 顯示載入狀態
+                btn.innerText = "⏳ 載入音色中...";
+                btn.disabled = true;
+
+                // 建立採樣器
+                sampler = new Tone.Sampler({
+                    urls: {
+                        // 對應光遇 15 音 (C4 ~ C6)
+                        'C4': '01.mp3', 'D4': '02.mp3', 'E4': '03.mp3', 'F4': '04.mp3', 'G4': '05.mp3',
+                        'A4': '06.mp3', 'B4': '07.mp3', 'C5': '08.mp3', 'D5': '09.mp3', 'E5': '10.mp3',
+                        'F5': '11.mp3', 'G5': '12.mp3', 'A5': '13.mp3', 'B5': '14.mp3', 'C6': '15.mp3'
+                    },
+                    baseUrl: "./sounds/", // 這裡指定你的資料夾路徑
+                    onload: () => {
+                        console.log("Custom sounds loaded!");
+                        btn.innerText = originalText; // 恢復按鈕文字
+                        btn.disabled = false;
+                        sampler.volume.value = -5;
+                    },
+                    onerror: (err) => {
+                        console.error("音效載入失敗", err);
+                        alert("無法讀取音效檔！請確認：\n1. 您的 sounds 資料夾裡是否有 01.mp3 ~ 15.mp3\n2. 是否已上傳到 GitHub Pages (本地端直接開啟可能會被瀏覽器阻擋)");
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                        // 失敗時切回預設
+                        document.getElementById('instrumentSelect').value = 'harp';
+                        changeInstrument();
+                    }
+                }).toDestination();
+
+                // 將主合成器變數指向採樣器，這樣播放邏輯不用改
+                synth = sampler;
+
+            } else {
+                // === 模式 B: 使用內建合成器 (無需檔案) ===
+                
+                // 如果之前是採樣器，現在切換回合成器，重新建立一個 PolySynth
+                // 或者直接覆蓋 synth 變數
+                synth = new Tone.PolySynth(Tone.Synth).toDestination();
+                
+                // 恢復按鈕狀態 (合成器切換是瞬間的)
+                btn.innerText = originalText;
+                btn.disabled = false;
+
+                // 設定參數
+                const commonEnvelope = { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.1 };
+
+                switch(type) {
+                    case 'piano':
+                        synth.set({ oscillator: { type: "triangle" }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 1.5 } }); 
+                        synth.volume.value = -5; 
+                        break;
+                    case 'guitar':
+                        synth.set({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 1 } }); 
+                        synth.volume.value = -8; 
+                        break;
+                    case 'synth':
+                        synth.set({ oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }); 
+                        synth.volume.value = -10; 
+                        break;
+                    case 'harp': 
+                    default:
+                        synth.set({ oscillator: { type: "triangle" }, envelope: commonEnvelope }); 
+                        synth.volume.value = -5; 
+                        break;
+                }
             }
         }
 
@@ -426,31 +502,24 @@
                     const keyIndex = SKY_NOTES.indexOf(playMidi);
                     if (keyIndex !== -1) {
                         
-                        // 音訊與視覺分離排程
+                        // 音訊排程
                         Tone.Transport.schedule((time) => {
-                            // 1. Audio On
                             const freq = Tone.Frequency(playMidi, "midi");
-                            // 使用 triggerAttackRelease 自動處理按住的時間
                             synth.triggerAttackRelease(freq, note.duration, time);
 
-                            // 2. Visual On
+                            // 視覺排程 (同步)
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) {
-                                    // 確保重置動畫
-                                    el.classList.remove('active');
-                                    void el.offsetWidth; 
                                     el.classList.add('active');
                                 }
                             }, time);
 
-                            // 3. Visual Off
-                            // 計算何時移除 class，最少顯示 0.1 秒避免太快看不見
-                            const visualDuration = Math.max(note.duration, 0.1);
+                            // 視覺結束 (延音)
                             Tone.Draw.schedule(() => {
                                 const el = document.getElementById(`sky-key-${keyIndex}`);
                                 if (el) el.classList.remove('active');
-                            }, time + visualDuration);
+                            }, time + note.duration);
 
                         }, note.time);
                         
